@@ -1,4 +1,4 @@
-from typing import List, Deque
+from typing import List, Deque, Any
 import logging
 logger = logging.getLogger(__name__)
 
@@ -19,27 +19,59 @@ class ObstacleFreeContinuousSpace(Space):
     def from_image(cls, img, height, width):
         return cls(height, width)
     
+class ObstacleContinuousSpace(Space):
+    x_range: tuple[float, float]
+    y_range: tuple[float, float]
+    obstacles: List[Any]
+    def __init__(self, x_range: tuple[float, float], y_range: tuple[float, float]):
+        super().__init__()
+        self.x_range = x_range
+        self.y_range = y_range
+        self.obstacles = []
 
+    @classmethod
+    def from_image(cls, img, height, width):
+        return cls(height, width)
+    
 
+import random
 class StateNode:
     
     parent: "StateNode"
     children: List["StateNode"]
-    value: float
+    space: Space | ObstacleFreeContinuousSpace | ObstacleContinuousSpace
     coordinates: tuple[float, float]
     
     def __repr__(self):
         return f"{self.coordinates}"
       
-    def __init__(self, value: float, coordinates: tuple[float, float], parent: "StateNode", children: List["StateNode"]):
+    def __init__(self, space: Space | ObstacleFreeContinuousSpace | ObstacleContinuousSpace, coordinates: tuple[float, float], parent: "StateNode", children: List["StateNode"]):
         self.parent = parent
         self.children = children
-        self.value = value
+        self.space = space
         self.coordinates = coordinates
     
     def set_child(self, child: "StateNode"):
         self.children.append(child)
         child.parent = self
+    
+    def has_collision(self, end_state):
+
+        #print("Yet to implement better cost function\r")
+        if not end_state.space == self.space:
+            return 0.0
+        if type(self.space) == Space or isinstance(self.space, ObstacleFreeContinuousSpace):
+            return 0.0
+        else:
+            for obstacle in self.space.obstacles:
+                # See if beam from self.coords to end_state.coords hits the obstacle
+                pass
+                
+            return 1.0
+
+    
+    
+        
 
 import random
 import math
@@ -56,22 +88,39 @@ class SearchNode:
         self.parent = parent
         self.children = children
         
-
     def set_child(self, child: "SearchNode"):
         self.children.append(child)
         child.parent = self
 
+class CostlySearchNode:
+    parent: "CostlySearchNode"
+    children: dict["CostlySearchNode", float]
+
+    def __repr__(self):
+        return f"{self.state.coordinates}"
+
+    def __init__(self, state_node: StateNode, parent:"CostlySearchNode", children: dict["CostlySearchNode", float]):
+        self.state = state_node
+        self.parent = parent
+        self.children = children
+
+    def set_child(self, child: "CostlySearchNode", cost: float=0.0):
+        
+        self.children[child] = cost
+
+
+
 ### Space -> States Utilities
-def from_uniform_distribution_over_obstacle_free_continuous_space(space: Space, n_nodes: int):
+def from_uniform_distribution_over_obstacle_free_continuous_space(space: ObstacleFreeContinuousSpace, n_nodes: int):
     nodes: List[StateNode] = []
     for n in range(n_nodes):
         x_coordinate = random.random() * space.x_range[1] - space.x_range[0]
         y_coordinate = random.random() * space.y_range[1] - space.y_range[0]
-        nodes.append(StateNode(None, (x_coordinate, y_coordinate), None, []))
+        nodes.append(StateNode(space, (x_coordinate, y_coordinate), None, []))
     logger.warning("Not a usable state space - unconnected state graph.")
     return nodes # Not a usable 
 
-def from_grid_distribution_over_obstacle_free_continuous_space(space: Space, n_rows: int, n_columns: int):
+def from_grid_distribution_over_obstacle_free_continuous_space(space: ObstacleFreeContinuousSpace, n_rows: int, n_columns: int):
     w = space.x_range[1] - space.x_range[0]
     h = space.y_range[1] - space.y_range[0]
 
@@ -80,7 +129,7 @@ def from_grid_distribution_over_obstacle_free_continuous_space(space: Space, n_r
         for i in range(n_columns):
             x = space.x_range[0] + i * w/n_rows
             y = space.y_range[0] + j *h/n_columns
-            nodes.append(StateNode(None, (x, y), None, []))
+            nodes.append(StateNode(space, (x, y), None, []))
     for idx in range(0, len(nodes)):
         i = idx % len(nodes)/n_columns
         j = idx % len(nodes)/n_rows
@@ -94,46 +143,50 @@ def from_grid_distribution_over_obstacle_free_continuous_space(space: Space, n_r
             print(nodes)
             raise IndexError
     return nodes
-### End Space -> State Utilities
-"""
-class PathPlanner:
+### End "Space -> State" Utilities
+import math
+### Heuristic functions ###
+def manhattan_distance(state: StateNode, goal_state: StateNode):
+    #print(f"Heuristic {state} -> {goal_state} = {abs(goal_state.coordinates[0] - state.coordinates[0]) + abs(goal_state.coordinates[1] - state.coordinates[1])}")
+    return abs(goal_state.coordinates[0] - state.coordinates[0]) + abs(goal_state.coordinates[1] - state.coordinates[1])
 
-    def __init__(self):
-        self.path = None
+### End heuristic functions ###
 
-    def createPath(self, space: Space, search_nodes: List[SearchNode], start_node: SearchNode, goal_node: SearchNode):
-        search = Search(search_nodes, start_node, goal_node)
-        reached = search.solve()
-        Path.from_search_solution(reached)
-"""
+
 class Path:
-    cost: float
-    nodes: List[SearchNode]
+    total_cost: float | None
+    nodes: List[SearchNode] | List[CostlySearchNode]
 
-    def __init__(self, nodes: List[SearchNode]):
-        self.cost = None
+    def __init__(self, nodes: List[SearchNode], total_cost: float=0.0):
+        self.total_cost = total_cost
         self.nodes = nodes
 
     @classmethod
-    def from_search_solution(cls, reached: SearchNode):
+    def from_search_solution(cls, reached: SearchNode | CostlySearchNode):
+        total_cost = 0.0
         if not reached:
             logging.warning("Goal not reached by search!")
             return cls([])
         nodes = [reached]
         while nodes[-1].parent:
+            if isinstance(reached, CostlySearchNode):
+                total_cost += nodes[-1].parent.children[nodes[-1]]
             nodes.append(nodes[-1].parent)
         nodes.reverse()
-        return cls(nodes)
+        if isinstance(reached, CostlySearchNode):
+            return cls(nodes, total_cost)
+        else:
+            return cls(nodes)
     
 class Search:
     nodes: List[StateNode]
     start_node: SearchNode
-    goal_node: SearchNode
+    goal_node: StateNode
     reached: SearchNode
 
     def __init__(self, nodes: List[StateNode], start_node: StateNode, goal_node: StateNode):
         self.nodes = nodes
-        self.start_node = SearchNode(start_node, None, [])
+        
         self.goal_node = goal_node
         
         
@@ -147,10 +200,10 @@ class Search:
 from collections import deque
 from time import time
 class BreadthFirstSearch(Search):
-
+    
     def __init__(self, nodes: List[StateNode], start_node: StateNode, goal_node: StateNode):
         super().__init__(nodes, start_node, goal_node)
-
+        self.start_node = SearchNode(start_node, None, [])
 
         
     def solve(self):
@@ -169,8 +222,7 @@ class BreadthFirstSearch(Search):
             
             print(f"Visits: {len(visited)}", end="\r")
             if node.state.coordinates == self.goal_node.coordinates:
-                logger.info(f"Goal reached after visiting {len(visited)} nodes in {time() - t0} seconds.")
-                print(f"Visits: {len(visited)}")
+                print(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
                 self.reached = node
                 return node
             for state in node.state.children:
@@ -179,6 +231,83 @@ class BreadthFirstSearch(Search):
                     node.set_child(child)
                     frontier.appendleft(child)
         return None
+import itertools
+class CostlyBreadthFirstSearch(Search):
+
+    def __init__(self, nodes: List[StateNode], start_node: StateNode, goal_node: StateNode):
+        super().__init__(nodes, start_node, goal_node)
+        self.start_node = CostlySearchNode(start_node, None, dict())
+        
+    def solve(self):
+        visited: List[StateNode] = []
+        frontier: Deque[CostlySearchNode] = deque()
+        frontier.appendleft(self.start_node)
+        
+        t0 = time()
+        
+        while len(frontier) > 0:
+            node = frontier.pop()
+            if node.state in visited: # just node with cost
+                continue
+            visited.append(node.state)
+            
+            print(f"Visits: {len(visited)}", end="\r")
+            if node.state.coordinates == self.goal_node.coordinates:
+                print(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
+                self.reached = node
+                return node
+            for state in node.state.children:
+                if not state in visited:
+                    child = CostlySearchNode(state, node, dict())
+                    node.set_child(child)
+                    frontier.appendleft(child)
+        return None
+
+
+from queue import PriorityQueue
+
+class A_Star_Search(Search):
+
+    def __init__(self, nodes: List[StateNode], start_node: StateNode, goal_node: StateNode):
+        super().__init__(nodes, start_node, goal_node)
+        self.start_node = CostlySearchNode(start_node, None, dict())
+        self.counter = itertools.count() # For tiebreakers
+
+        
+    def solve(self, heuristic_function: Any=manhattan_distance):
+        visited: List[StateNode] = []
+        cost_cache: dict[CostlySearchNode, float] = dict()
+        frontier: PriorityQueue[tuple[float, int, CostlySearchNode]] = PriorityQueue()
+
+        initial_cost = 0.0
+        cost_cache[self.start_node] = initial_cost
+        frontier.put((heuristic_function(self.start_node.state, self.goal_node) + initial_cost, next(self.counter), self.start_node))
+        t0 = time()
+        
+        while not frontier.empty():
+            #print(frontier.queue)
+            __, __, node = frontier.get()
+            if node.state in visited: # just node with cost
+                continue
+            visited.append(node.state)
+            
+            print(f"Visits: {len(visited)}", end="\r")
+            if node.state.coordinates == self.goal_node.coordinates:
+                print(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
+                self.reached = node
+                return node
+            for state in node.state.children:
+                if not state in visited:
+                    h = heuristic_function(state, self.goal_node)
+                    cost = node.state.has_collision(state)
+                    child = CostlySearchNode(state, node, dict())
+                    path_cost = cost_cache[node] + cost
+                    cost_cache[child] = path_cost
+                    node.set_child(child, cost)
+                    priority = h + path_cost
+                    frontier.put((priority, next(self.counter), child)) 
+        return None
+
 """
 space1 = ObstacleFreeContinuousSpace((-100, 100), (-100, 100))
 state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space1, 10, 10)
@@ -190,6 +319,7 @@ logger.info(path)
 
 
 def main():
+    print("--------BFS---------")
     space1 = ObstacleFreeContinuousSpace((-100, 100), (-100, 100))
     state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space1, 10, 10)
     goal_state = state_nodes[-25]
@@ -197,6 +327,24 @@ def main():
     reached = bfs.solve()
     path = Path.from_search_solution(bfs.reached)
     print(path.nodes)
+    print("--------Costly (0 cost)----------")
+    space2 = ObstacleContinuousSpace((-100, 100), (-100, 100))
+    state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space2, 100, 100)
+    goal_state = state_nodes[-25]
+    bfs = CostlyBreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
+    reached = bfs.solve()
+    path = Path.from_search_solution(bfs.reached)
+    print(path.nodes)
+    print(len(path.nodes), path.total_cost)
+    print("-------A star-------")
+    space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
+    state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space3, 100, 100)
+    goal_state = state_nodes[-25]
+    bfs = A_Star_Search(state_nodes, state_nodes[0], goal_state)
+    reached = bfs.solve(heuristic_function=manhattan_distance)
+    path = Path.from_search_solution(bfs.reached)
+    print(path.nodes)
+    print(len(path.nodes), path.total_cost)
 
 
 
