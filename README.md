@@ -3,7 +3,7 @@
 ## Setup
 To setup the python environment and start the submission, do:
 ```
-$ ./run.sh
+./run.sh
 ```
 ### Alternatively,
 ```
@@ -18,16 +18,16 @@ Below I'll illustrate the sequence of things needed to run a path planner.
 
 To make a new continuous space  that comes from (-100,-100) to (100,100), pass the `x_range` and `y_range`:
 ```
-space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))    
+space = ObstacleContinuousSpace((-100, 100), (-100, 100))    
 ```
 Add obstacles:
 ```
-space3.add(Obstacle([(-10,10), (-80,-2)]))
-space3.add(Obstacle([(-10,10), (10,80)]))
+space.add(Obstacle([(-10,10), (-80,-2)]))
+space.add(Obstacle([(-10,10), (10,80)]))
 ```
 Then make state configurations from the space with utilities. The `from_grid_distribution_over_continuous_space` utility lays a grid of `n_rows` and `n_columns` evenly over the space, returning the state configurations (nodes):
 ```
-state_nodes = from_grid_distribution_over_continuous_space(space3, 10, 10)
+state_nodes = from_grid_distribution_over_continuous_space(space, 10, 10)
 ```
 Make a robot, giving it shape, assuming it only translates from up, down, left, right. To make the robot "carrying something", make it bigger.
 ```
@@ -35,7 +35,7 @@ robot = Robot([(-1, 1), (-1, 1)])
 ```
 Add the robot into the space:
 ```
-space3.add(robot)
+space.add(robot)
 ```
 With state configurations, a path planner can be deployed with a search:
 ```
@@ -50,5 +50,5 @@ path = Path.from_search_solution(search.reached)
 ```
 At any point, visualize the environment (all the arguments are optional):
 ```
-space3.show(state_nodes, path, show_state_connections=True)
+space.show(state_nodes, path, show_state_connections=True)
 ```
