@@ -437,67 +437,106 @@ bfs.solve()
 path = Path.from_search_solution(bfs.reached)
 logger.info(path)
 """
-
-
+from time import sleep
 def main():
     def sequence1():
-        print("--------BFS---------")
-        space1 = ObstacleFreeContinuousSpace((-1000, 1000), (-1000, 1000))
-        state_nodes = from_grid_distribution_over_continuous_space(space1, 100, 100)
+        print("--------Breadth-First Search---------")
+        sleep(0.5)
+        space1 = ObstacleFreeContinuousSpace((-100, 100), (-100, 100))
+        input("Let's look at the environment. [enter] to visualize, and X out of the window to move on. (It's blank)")
+        space1.show()
+        input("Next we cover the environment in state configurations. [enter]")
+        state_nodes = from_grid_distribution_over_continuous_space(space1, 10, 10)
+        space1.show(state_nodes)
         goal_state = state_nodes[-1]
+        input("The state configurations are linked to each other in a grid-like manner. [enter]")
+        space1.show(state_nodes, show_state_connections=True)
+        print("Next, we plan a path.")
+        print("Let's assume the path is to start at the bottom left and go to the top right.")
+        input("A BFS in this case traverses all states (it is the worst case for time and space complexity). Hit [enter] to run the search.")
         bfs = BreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
         reached = bfs.solve()
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
+        #print("The BFS has reached the goal, and the path is:")
+        #print(path.nodes)
+        input("[enter] to visualize the path")
+        space1.show(state_nodes, path, show_state_connections=True)
+        input("[enter] to continue...")
+
         #space1.show(state_nodes,path, show_state_connections=True)
 
-    def sequence2():
-        # for testing transition to A*
-        print("-------- Costly (0 cost) ----------")
-        space2 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-        state_nodes = from_grid_distribution_over_continuous_space(space2, 10, 10)
+    def sequence_tough():
+        print("--------Breadth-First Search---------")
+        space1 = ObstacleFreeContinuousSpace((-1000, 1000), (-1000, 1000))
+        state_nodes = from_grid_distribution_over_continuous_space(space1, 100, 100)
+        input("[enter] to visualize the states in the environment.")
+        print("This will take several seconds. Hit ^C if it's taking too long.")
+        try:
+            space1.show(state_nodes)
+        except KeyboardInterrupt:
+            print("Yeah that was taking too long...")
+            plt.close('all')
         goal_state = state_nodes[-1]
-        robot = Robot([(-1,1),(-1,1)])
-        bfs = CostlyBreadthFirstSearch(robot, state_nodes, state_nodes[0], goal_state)
+        input("BFS has to traverse all states. This is expensive. [enter] begin the search.")
+        bfs = BreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
         reached = bfs.solve()
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
-        print(len(path.nodes), path.total_cost)
-        space2.show(state_nodes,path, show_state_connections=True)
+        #print("The BFS has reached the goal after all that time. The path is:")
+        #print(path.nodes)
+        input("[enter] to visualize the path.")
+        print("^C to skip")
+        try:
+            space1.show(state_nodes, path, show_state_connections=True)
+        except KeyboardInterrupt:
+            print("Yeah that was taking too long...")
+            plt.close('all')
+        input("[enter] to continue...")
 
     def faster():
-        print("------- A star -------")
+        print("------- Best-First Search -------")
         space3 = ObstacleFreeContinuousSpace((-1000, 1000), (-1000, 1000))
         #space3.show()
         state_nodes = from_grid_distribution_over_continuous_space(space3, 100, 100)
         #space3.show(state_nodes)
         goal_state = state_nodes[-1]
         robot = Robot([(-1, 1), (-1, 1)])
+        input("With a heuristic, there will be fewer visits in the state space. [enter] begin the search.")
         bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
         reached = bfs.solve(heuristic_function=manhattan_distance)
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
-        print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
-        space3.show(state_nodes, path, show_state_connections=True)
+        #print(path.nodes)
+        #print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
+        input("[enter] to visualize the path.")
+        print("^C to move past.")
+        try:
+            space3.show(state_nodes, path, show_state_connections=True)
+        except KeyboardInterrupt:
+            print("Yeah that was taking too long...")
+            plt.close('all')
 
     def sequence():
         print("------- A star -------")
         space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-        #space3.show()
         state_nodes = from_grid_distribution_over_continuous_space(space3, 10, 10)
-        #space3.show(state_nodes)
+        space3.show(state_nodes)
         goal_state = state_nodes[-1]
         robot = Robot([(-1, 1), (-1, 1)])
         space3.add(robot)
         space3.add(Obstacle([(-10,100), (-10,10)]))
         space3.add(Obstacle([(-60,-20), (-20,60)]))
         space3.add(Obstacle([(30,40), (30,40)]))
+        input("Press [enter] to see the new environment.")
+        space3.show(state_nodes)
+        print("Clearly some of these state transitions will be \"costly\". Let's also assume that each transition has an inherent cost of 0.1.")
+        input("Let's again assume that the robot wants to plan a path from bottom-left to top-right. [enter] to start the search.")
         bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
         reached = bfs.solve(heuristic_function=manhattan_distance)
         path = Path.from_search_solution(bfs.reached)
         print(path.nodes)
         print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
+        input("[enter] to visualize the path found by A*")
         space3.show(state_nodes, path, show_state_connections=True)
+        input("[enter] to continue...")
     
     def all_or_nothing(robot_laden):
         print("------- A star -------")
@@ -529,24 +568,48 @@ def main():
         space3.add(robot)
         space3.add(Obstacle([(-10,10), (-80,-2)]))
         space3.add(Obstacle([(-10,10), (10,80)]))
+        input("Press [enter] to see the new environment.")
+        print("Notice the gap where our small robot could fit through without colliding with the obstacles.")
+        space3.show(state_nodes)
+        print("Clearly some of these state transitions will be \"costly\".")
+        input("Let's again assume that the robot wants to plan a path from bottom-left to top-right. [enter] to start the search.")
         bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
         reached = bfs.solve(heuristic_function=manhattan_distance)
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
+        #print(path.nodes)
         print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
+        input("[enter] to visualize the path found by A*. The thickness of the green path shows the size of the robot.")
         space3.show(state_nodes, path, show_state_connections=True)
+        input("[enter] to continue...")
 
     def test():
         space = ObstacleContinuousSpace((-10,10), (-10,10))
         state_nodes = from_grid_distribution_over_continuous_space(space, 2, 2)
         space.show(state_nodes, show_state_connections=True)
 
-    #sequence1()
-    #faster()
+    print("------- HW2 -------")
+    sleep(0.5)
+    print("This homework demonstrates path planning. We will consider a robot in a continuous environment. The robot plans by covering the continuous environment in a bunch of state configurations. Then it performs a search over these states. First, we will look at the simplest technique for doing this.")
+    input("Press [enter] to begin demonstration.")
+    sequence1()
+    print("BFS starts to fail when the environment gets big. Like, for instance, when there are 10,000 states (100 x 100) instead of 100.")
+    input("Press [enter] to begin demonstration.")
+    sequence_tough()
+    print("Luckily, we can use heuristics. to speed this up.")
+    input("If we use manhattan distance as a heuristic function, we can speed up the search significantly. [enter] to begin demonstration.")
+    faster()
+    print("But what if there are obstacles in the enviroment? This is where A* comes in. A* uses a heuristic but also takes into account cost.")
+    input("Let's now consider that the robot has shape - 2x2 (meters). Let's see how A* performs with some obstacles in the way. [enter] to begin demonstration")
+    sequence3(False)
+    print("Since the robot is only 2x2, it can just barely slip through that hole. But what if the robot was bigger - or, it was carrying something.")
+    input("Let's assume it's carrying something with 10x the side length. Press [enter] to see the demonstration of A* with a laden robot.")
     sequence3(True)
-    #all_or_nothing(True)
-            
-
+    print("The robot had to take a different path because it was laden with something that could not go through the narrow gap in the environment.")
+    sleep(0.5)
+    print("And that's all for HW2. Thank you!")
+    input("[enter] to quit.")
+    print("Bye.")
+    
 
 if __name__ == '__main__':
     main()
