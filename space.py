@@ -38,6 +38,25 @@ class ObstacleContinuousSpace(Space):
         else:
             self.obstacles.append(obstacle)
 
+    def show(self, state_nodes: List["StateNode"]=[], path: "Path"=None):
+        plt.draw_rect()
+        # do smaller rects
+        plt.draw_rect(self.robot.shape)
+        for obstacle in self.obstacles:
+            plt.draw_rect(obstacle.shape)
+        if len(state_nodes) > 0:
+            # print states
+            for node in state_nodes:
+                plt.draw_circle()
+        if path:
+            # print path nodes
+            first_node = path.nodes[0]
+            for node in path.nodes[1:]:
+                plt.draw_circle()
+                plt.draw_line(first_node, node)
+                first_node = node
+        plt.show()
+
     @classmethod
     def from_image(cls, img, height, width):
         return cls(height, width)
@@ -48,12 +67,19 @@ class ObstacleContinuousSpace(Space):
         n_stamps = 10
         x = coordinate_2[0] - coordinate_1[0]
         y = coordinate_2[1] - coordinate_1[1]
-        # make obstacle AABB
-        for i in range(n_stamps):
-            x_offset = i * x / n_stamps + coordinate_1[0]
-            y_offset = i * y / n_stamps + coordinate_1[1]
+        obstacle_aabb = AABB(obstacle.shape)
+        collisions = 0.0
+        print(f"Robot at {coordinate_1} with shape {self.robot.shape} towards {coordinate_2}")
+        for i in range(n_stamps + 1):
+            x_offset = (i) * x / n_stamps + coordinate_1[0]
+            y_offset = (i) * y / n_stamps + coordinate_1[1]
             stamp = AABB([(self.robot.shape[0][0] + x_offset, self.robot.shape[0][1] + x_offset), (self.robot.shape[1][0] + y_offset, self.robot.shape[1][1] + y_offset)])
-            # does stamp overlap obstacle AABB? -> high cost
+            if stamp.overlaps(obstacle_aabb):
+                print(f"Collision of stamp {i}:{stamp} with {obstacle_aabb}")
+                collisions += 1.0
+            else:
+                print(f"Obstacle {obstacle_aabb} not collide with stamp {stamp}")
+        return collisions
 
 
             
@@ -88,13 +114,13 @@ class StateNode:
         if type(self.space) == Space or isinstance(self.space, ObstacleFreeContinuousSpace):
             return 0.0
         else:
+            cost = 0.0
             for obstacle in self.space.obstacles:
-                self.space.robot_collide(self.coordinates, obstacle, end_state.coordinates)
+                cost += self.space.robot_collide(self.coordinates, obstacle, end_state.coordinates)
                     
                 # See if beam from self.coords to end_state.coords hits the obstacle
-                pass
                 
-            return 1.0
+            return cost
 
     
     
@@ -157,6 +183,8 @@ def from_uniform_distribution_over_obstacle_free_continuous_space(space: Obstacl
     logger.warning("Not a usable state space - unconnected state graph.")
     return nodes # Not a usable 
 
+
+
 def from_grid_distribution_over_obstacle_free_continuous_space(space: ObstacleFreeContinuousSpace, n_rows: int, n_columns: int):
     w = space.x_range[1] - space.x_range[0]
     h = space.y_range[1] - space.y_range[0]
@@ -180,6 +208,33 @@ def from_grid_distribution_over_obstacle_free_continuous_space(space: ObstacleFr
             print(nodes)
             raise IndexError
     return nodes
+
+def from_grid_distribution_over_obstacle_continuous_space(space: ObstacleContinuousSpace, n_rows: int, n_columns: int):
+    w = space.x_range[1] - space.x_range[0]
+    h = space.y_range[1] - space.y_range[0]
+
+    nodes: List[StateNode] = []
+    for j in range(n_rows):
+        for i in range(n_columns):
+            x = space.x_range[0] + i * w/n_rows
+            y = space.y_range[0] + j *h/n_columns
+            nodes.append(StateNode(space, (x, y), None, []))
+    for idx in range(0, len(nodes)):
+        i = idx % len(nodes)/n_columns
+        j = idx % len(nodes)/n_rows
+        try:
+            if i + 1 < n_columns:
+                nodes[idx].set_child(nodes[idx + 1])
+            if j + 1 < n_rows:
+                nodes[idx].set_child(nodes[idx + n_columns])
+        except IndexError:
+            print(i, idx + 1, j, idx + n_columns)
+            print(nodes)
+            raise IndexError
+    return nodes
+
+
+
 ### End "Space -> State" Utilities
 import math
 ### Heuristic functions ###
@@ -360,27 +415,29 @@ def main():
     print("--------BFS---------")
     space1 = ObstacleFreeContinuousSpace((-100, 100), (-100, 100))
     state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space1, 10, 10)
-    goal_state = state_nodes[-25]
+    goal_state = state_nodes[-1]
     bfs = BreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
     reached = bfs.solve()
     path = Path.from_search_solution(bfs.reached)
     print(path.nodes)
-    print("--------Costly (0 cost)----------")
+    print("-------- Costly (0 cost) ----------")
     space2 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-    state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space2, 100, 100)
-    goal_state = state_nodes[-25]
-    robot = Robot()
+    state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space2, 10, 10)
+    goal_state = state_nodes[-1]
+    robot = Robot([(-1,1),(-1,1)])
     bfs = CostlyBreadthFirstSearch(robot, state_nodes, state_nodes[0], goal_state)
     reached = bfs.solve()
     path = Path.from_search_solution(bfs.reached)
     print(path.nodes)
     print(len(path.nodes), path.total_cost)
-    print("-------A star-------")
+    print("------- A star -------")
     space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-    state_nodes = from_grid_distribution_over_obstacle_free_continuous_space(space3, 100, 100)
-    goal_state = state_nodes[-25]
-    robot = Robot([(-1, -1), (-1, 1)])
+    state_nodes = from_grid_distribution_over_obstacle_continuous_space(space3, 10, 10)
+    goal_state = state_nodes[-1]
+    robot = Robot([(-1, 1), (-1, 1)])
     space3.add(robot)
+    space3.add(Obstacle([(-10,10), (-10,10)]))
+    space3.add(Obstacle([(10,40), (10,40)]))
     bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
     reached = bfs.solve(heuristic_function=manhattan_distance)
     path = Path.from_search_solution(bfs.reached)
