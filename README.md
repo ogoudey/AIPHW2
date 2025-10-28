@@ -1,6 +1,10 @@
 # AI Planning Homework 2 -- Path Planning
 
 ## Setup
+Clone the repository:
+```
+git clone https://github.com/ogoudey/AIPHW2.git
+```
 To setup the python environment and start the submission, do:
 ```
 $ ./run.sh
