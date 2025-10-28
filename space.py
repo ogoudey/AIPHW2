@@ -18,19 +18,21 @@ class ObstacleFreeContinuousSpace(Space):
     @classmethod
     def from_image(cls, img, height, width):
         return cls(height, width)
+    
+import matplotlib.pyplot as plt 
+from aabbtree import AABB
 
-from aabbtree import AABB, AABBTree
 class ObstacleContinuousSpace(Space):
     x_range: tuple[float, float]
     y_range: tuple[float, float]
     obstacles: List[Any]
     robot: "Robot"
+
     def __init__(self, x_range: tuple[float, float], y_range: tuple[float, float]):
         super().__init__()
         self.x_range = x_range
         self.y_range = y_range
         self.obstacles = []
-
 
     def add(self, obstacle: "Obstacle"):
         if isinstance(obstacle, Robot):
@@ -39,22 +41,41 @@ class ObstacleContinuousSpace(Space):
             self.obstacles.append(obstacle)
 
     def show(self, state_nodes: List["StateNode"]=[], path: "Path"=None):
-        plt.draw_rect()
-        # do smaller rects
-        plt.draw_rect(self.robot.shape)
+        fig, ax = plt.subplots()
+        # --- workspace ---
+        ax.add_patch(plt.Rectangle(
+            (self.x_range[0], self.y_range[0]),
+            self.x_range[1] - self.x_range[0],
+            self.y_range[1] - self.y_range[0],
+            fill=False, color='black', linewidth=2, label='workspace'
+        ))
+
         for obstacle in self.obstacles:
-            plt.draw_rect(obstacle.shape)
+            coords = (obstacle.shape[0][0], obstacle.shape[1][0])
+            w = obstacle.shape[0][1] - obstacle.shape[0][0]
+            h = obstacle.shape[1][1] - obstacle.shape[1][0]
+            print(coords)
+            ax.add_patch(plt.Rectangle(coords, w, h, fill=True, color='red', alpha=0.5))
         if len(state_nodes) > 0:
-            # print states
             for node in state_nodes:
-                plt.draw_circle()
+                ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
         if path:
             # print path nodes
             first_node = path.nodes[0]
+            xs = [n.state.coordinates[0] for n in path.nodes]
+            ys = [n.state.coordinates[1] for n in path.nodes]
+            ax.plot(xs, ys, color='green', linewidth=2, label='path')
+
             for node in path.nodes[1:]:
-                plt.draw_circle()
-                plt.draw_line(first_node, node)
-                first_node = node
+                ax.add_patch(plt.Circle((node.state.coordinates[0], node.state.coordinates[1]), 0.2, color='green'))
+        ax.set_aspect('equal', adjustable='box')
+        #ax.set_xlim(self.x_range)
+        #ax.set_ylim(self.y_range)
+
+        ax.relim()       # Recompute limits based on all artists
+        ax.autoscale()
+
+        #ax.legend()
         plt.show()
 
     @classmethod
@@ -76,7 +97,7 @@ class ObstacleContinuousSpace(Space):
             stamp = AABB([(self.robot.shape[0][0] + x_offset, self.robot.shape[0][1] + x_offset), (self.robot.shape[1][0] + y_offset, self.robot.shape[1][1] + y_offset)])
             if stamp.overlaps(obstacle_aabb):
                 print(f"Collision of stamp {i}:{stamp} with {obstacle_aabb}")
-                collisions += 1.0
+                collisions += 10.0
             else:
                 print(f"Obstacle {obstacle_aabb} not collide with stamp {stamp}")
         return collisions
@@ -432,15 +453,19 @@ def main():
     print(len(path.nodes), path.total_cost)
     print("------- A star -------")
     space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
+    #space3.show()
     state_nodes = from_grid_distribution_over_obstacle_continuous_space(space3, 10, 10)
+    #space3.show(state_nodes)
+    
     goal_state = state_nodes[-1]
     robot = Robot([(-1, 1), (-1, 1)])
     space3.add(robot)
-    space3.add(Obstacle([(-10,10), (-10,10)]))
-    space3.add(Obstacle([(10,40), (10,40)]))
+    space3.add(Obstacle([(-10,100), (-10,10)]))
+    space3.add(Obstacle([(30,40), (30,40)]))
     bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
     reached = bfs.solve(heuristic_function=manhattan_distance)
     path = Path.from_search_solution(bfs.reached)
+    space3.show(state_nodes, path)
     print(path.nodes)
     print(len(path.nodes), path.total_cost)
 
