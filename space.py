@@ -24,13 +24,16 @@ class ObstacleFreeContinuousSpace(Space):
         
         if len(state_nodes) > 0:
             for node in state_nodes:
-                ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
+                if node.visited:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.25, color='purple'))
+                else:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
             if show_state_connections:
                 for n in state_nodes:
                     x1 = n.coordinates[0]
                     y1 = n.coordinates[1]
                     for child in n.children:
-                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link', alpha=0.1)
+                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link', alpha=0.02)
         if path:
             # print path nodes
             first_node = path.nodes[0]
@@ -52,38 +55,84 @@ from aabbtree import AABB
 class ObstacleContinuousSpace(Space):
     x_range: tuple[float, float]
     y_range: tuple[float, float]
-    obstacles: List[Any]
+    obstacles: dict[Any, float]
     robot: "Robot"
 
     def __init__(self, x_range: tuple[float, float], y_range: tuple[float, float]):
         super().__init__()
         self.x_range = x_range
         self.y_range = y_range
-        self.obstacles = []
+        self.obstacles = dict()
 
-    def add(self, obstacle: "Obstacle"):
+    def add(self, obstacle: "Obstacle", cost: float=100.0):
         if isinstance(obstacle, Robot):
             self.robot = obstacle
         else:
-            self.obstacles.append(obstacle)
+            self.obstacles[obstacle] = cost
 
+    def get_cost(self, coordinates_a, coordinates_b):
+        total_cost = 0.1
+        for obstacle, cost in self.obstacles.items():
+            total_cost += self.robot_collide(coordinates_a, obstacle, coordinates_b)
+        return total_cost
+
+    def get_obstacles_from_altitude(self, columns: dict[float, dict[float, float]], cost: float=1.0, condition = lambda altitude: altitude > 0.0):
+        a_column = list(columns.values())[0]
+        
+        cell_size = (list(columns.keys())[1] - list(columns.keys())[0], list(columns.keys())[1] - list(columns.keys())[0]) # not too right...
+        cell_size = (400, 400)
+        print(cell_size)
+        for c in columns:
+            making_obstacle = False
+            for y, z in sorted(list(columns[c].items()), key=lambda item: item[0]):
+                if condition(columns[c][y]):
+                    if not making_obstacle:
+                        y0 = y
+                        y1 = y
+                        making_obstacle = True
+                    else:
+                        if y - y1 > cell_size[1]: #If these are not adjacent cells (they coindidently have the same x)
+                            #print(f"{y} is different than {y1} by > {cell_size}")
+                            self.obstacles[Obstacle([(c - cell_size[0]/2, c + cell_size[0]/2), (y0 - cell_size[1]/2, y1 + cell_size[1]/2)])] = cost
+                            y0 = y
+                        y1 = y
+                else:
+                    if making_obstacle:
+                        self.obstacles[Obstacle([(c - cell_size[0]/2, c + cell_size[0]/2), (y0 - cell_size[1]/2, y1 + cell_size[1]/2)])] = cost
+                        making_obstacle = False
+                    else:
+                        making_obstacle=False
+            if making_obstacle:
+                try:
+                    self.obstacles[Obstacle([(c - cell_size[0]/2, c + cell_size[0]/2), (y0 - cell_size[1]/2, y1 + cell_size[1]/2)])] = cost
+                except ValueError:
+                    print("Bad obstacle")
+                    raise ValueError
+                
     def show(self, state_nodes: List["StateNode"]=[], path: "Path"=None, show_state_connections:bool=False):
         fig, ax = plt.subplots()
 
-        for obstacle in self.obstacles:
+        for obstacle, __ in self.obstacles.items():
             coords = (obstacle.shape[0][0], obstacle.shape[1][0])
             w = obstacle.shape[0][1] - obstacle.shape[0][0]
             h = obstacle.shape[1][1] - obstacle.shape[1][0]
             ax.add_patch(plt.Rectangle(coords, w, h, fill=True, color='red', alpha=0.5))
         if len(state_nodes) > 0:
             for node in state_nodes:
-                ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
+                if node.visited:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.2, color='purple'))
+                else:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
+                if node.is_start:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 5, color='brown'))
+                elif node.is_goal:
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 5, color='green'))
             if show_state_connections:
                 for n in state_nodes:
                     x1 = n.coordinates[0]
                     y1 = n.coordinates[1]
                     for child in n.children:
-                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link')
+                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link', alpha=0.1)
         if path:
             # print path nodes
             first_node = path.nodes[0]
@@ -93,7 +142,7 @@ class ObstacleContinuousSpace(Space):
             ax.plot(xs, ys, color='green', linewidth=robot_side_len, label='path')
 
             for node in path.nodes[1:]:
-                ax.add_patch(plt.Circle((node.state.coordinates[0], node.state.coordinates[1]), 0.2, color='green'))
+                ax.add_patch(plt.Circle((node.state.coordinates[0], node.state.coordinates[1]), 10, color='green'))
         ax.set_aspect('equal', adjustable='box')
         ax.relim()
         ax.autoscale()
@@ -109,7 +158,12 @@ class ObstacleContinuousSpace(Space):
         n_stamps = 10
         x = coordinate_2[0] - coordinate_1[0]
         y = coordinate_2[1] - coordinate_1[1]
-        obstacle_aabb = AABB(obstacle.shape)
+        try:
+            obstacle_aabb = AABB(obstacle.shape)    
+        except ValueError:
+            print(obstacle)
+            print(obstacle.shape)
+            raise ValueError
         collisions = 0.0
         #print(f"Robot at {coordinate_1} with shape {self.robot.shape} towards {coordinate_2}")
         for i in range(n_stamps + 1):
@@ -135,7 +189,9 @@ class StateNode:
     children: List["StateNode"]
     space: Space | ObstacleFreeContinuousSpace | ObstacleContinuousSpace
     coordinates: tuple[float, float]
-    
+    visited: bool
+    is_goal: bool
+    is_start: bool
     def __repr__(self):
         return f"{self.coordinates}"
       
@@ -144,6 +200,9 @@ class StateNode:
         self.children = children
         self.space = space
         self.coordinates = coordinates
+        self.visited = False
+        self.is_goal = False
+        self.is_start = False
     
     def set_child(self, child: "StateNode"):
         self.children.append(child)
@@ -157,9 +216,8 @@ class StateNode:
         if type(self.space) == Space or isinstance(self.space, ObstacleFreeContinuousSpace):
             return 0.0
         else:
-            cost = 0.1
-            for obstacle in self.space.obstacles:
-                cost += self.space.robot_collide(self.coordinates, obstacle, end_state.coordinates)
+            cost = self.space.get_cost(self.coordinates, end_state.coordinates)
+            
                     
                 # See if beam from self.coords to end_state.coords hits the obstacle
                 
@@ -210,7 +268,7 @@ class Obstacle:
         shape: List[tuple[float, float]] Example: [(-1, 1), (-1, 1)]
         """
         self.shape = shape
-
+        
 class Robot(Obstacle):
     def __init__(self, shape: List[tuple[float, float]]):
         super().__init__(shape)
@@ -230,6 +288,7 @@ def from_uniform_distribution_over_continuous_space(space: ObstacleFreeContinuou
 
 
 def from_grid_distribution_over_continuous_space(space: ObstacleContinuousSpace, n_rows: int, n_columns: int):
+    # Now symmetric!
     w = space.x_range[1] - space.x_range[0]
     h = space.y_range[1] - space.y_range[0]
     initial_x_offset = w/n_columns
@@ -248,9 +307,11 @@ def from_grid_distribution_over_continuous_space(space: ObstacleContinuousSpace,
         try:
             if i + 1 <= n_columns:
                 nodes[idx].set_child(nodes[idx + 1])
+                nodes[idx + 1].set_child(nodes[idx])
                 #print(f"{idx} => {idx + 1}")
             if j + 1 <= n_rows:
                 nodes[idx].set_child(nodes[idx + n_columns])
+                nodes[idx + n_columns].set_child(nodes[idx])
                 #print(f"{idx} => {idx + n_columns}")
 
         except IndexError:
@@ -269,6 +330,13 @@ def manhattan_distance(state: StateNode, goal_state: StateNode):
     #print(f"Heuristic {state} -> {goal_state} = {abs(goal_state.coordinates[0] - state.coordinates[0]) + abs(goal_state.coordinates[1] - state.coordinates[1])}")
     return abs(goal_state.coordinates[0] - state.coordinates[0]) + abs(goal_state.coordinates[1] - state.coordinates[1])
 
+def euclidean_distance(state: StateNode, goal_state: StateNode):
+    dx = goal_state.coordinates[0] - state.coordinates[0]
+    dy = goal_state.coordinates[1] - state.coordinates[1]
+    return (dx**2 + dy**2) ** 0.5
+
+def euclidean_manhattan_combo(state: StateNode, goal_state: StateNode):
+    return 0.5 * euclidean_distance(state, goal_state) + 0.5 * manhattan_distance(state, goal_state)
 ### End heuristic functions ###
 
 
@@ -276,9 +344,11 @@ class Path:
     total_cost: float | None
     nodes: List[SearchNode] | List[CostlySearchNode]
 
-    def __init__(self, nodes: List[SearchNode], total_cost: float=0.0):
+
+    def __init__(self, nodes: List[SearchNode], total_cost: float =0.0, costs_by_nodes: List[float] = []):
         self.total_cost = total_cost
         self.nodes = nodes
+        self.costs_by_nodes = costs_by_nodes
 
     @classmethod
     def from_search_solution(cls, reached: SearchNode | CostlySearchNode):
@@ -286,14 +356,17 @@ class Path:
         if not reached:
             logging.warning("Goal not reached by search!")
             return cls([])
+        costs_by_nodes = []
         nodes = [reached]
         while nodes[-1].parent:
             if isinstance(reached, CostlySearchNode):
                 total_cost += nodes[-1].parent.children[nodes[-1]]
+                costs_by_nodes.append(nodes[-1].parent.children[nodes[-1]])
             nodes.append(nodes[-1].parent)
+        costs_by_nodes.reverse()    
         nodes.reverse()
         if isinstance(reached, CostlySearchNode):
-            return cls(nodes, total_cost)
+            return cls(nodes, total_cost, costs_by_nodes)
         else:
             return cls(nodes)
     
@@ -339,7 +412,7 @@ class BreadthFirstSearch(Search):
                 continue
             visited.append(node.state)
             
-            print(f"Visits: {len(visited)}", end="\r")
+            print(f"Visits: {len(visited)} Size of frontier: {len(frontier)}", end="\r")
             if node.state.coordinates == self.goal_node.coordinates:
                 print(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
                 self.reached = node
@@ -357,7 +430,7 @@ class CostlyBreadthFirstSearch(Search):
         super().__init__(nodes, start_node, goal_node)
         self.start_node = CostlySearchNode(start_node, None, dict())
         self.robot = robot
-        
+        self.reached = None
     def solve(self):
         visited: List[StateNode] = []
         frontier: Deque[CostlySearchNode] = deque()
@@ -392,7 +465,7 @@ class A_Star_Search(Search):
         super().__init__(nodes, start_node, goal_node)
         self.start_node = CostlySearchNode(start_node, None, dict())
         self.counter = itertools.count() # For tiebreakers
-
+        self.reached = None
         
     def solve(self, heuristic_function: Any=manhattan_distance):
         visited: List[StateNode] = []
@@ -410,14 +483,15 @@ class A_Star_Search(Search):
             if node.state in visited: # just node with cost
                 continue
             visited.append(node.state)
+            node.state.visited = True
             
-            print(f"Visits: {len(visited)}", end="\r")
+            print(f"Visits: {len(visited)} Size of frontier: {frontier.qsize()}", end="\r")
             if node.state.coordinates == self.goal_node.coordinates:
                 print(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
                 self.reached = node
                 return node
             for state in node.state.children:
-                if not state in visited:
+                if not state in visited: # or not state.visited
                     h = heuristic_function(state, self.goal_node)
                     cost = node.state.has_collision(state)
                     child = CostlySearchNode(state, node, dict())
@@ -437,178 +511,57 @@ bfs.solve()
 path = Path.from_search_solution(bfs.reached)
 logger.info(path)
 """
+
+from app_interfaces import columns, x_range, y_range
+
+
 from time import sleep
 def main():
-    def sequence1():
-        print("--------Breadth-First Search---------")
-        sleep(0.5)
-        space1 = ObstacleFreeContinuousSpace((-100, 100), (-100, 100))
-        input("Let's look at the environment. [enter] to visualize, and X out of the window to move on. (It's blank)")
-        space1.show()
-        input("Next we cover the environment in state configurations. [enter]")
-        state_nodes = from_grid_distribution_over_continuous_space(space1, 10, 10)
-        space1.show(state_nodes)
-        goal_state = state_nodes[-1]
-        input("The state configurations are linked to each other in a grid-like manner. [enter]")
-        space1.show(state_nodes, show_state_connections=True)
-        print("Next, we plan a path.")
-        print("Let's assume the path is to start at the bottom left and go to the top right.")
-        input("A BFS in this case traverses all states (it is the worst case for time and space complexity). Hit [enter] to run the search.")
-        bfs = BreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve()
-        path = Path.from_search_solution(bfs.reached)
-        #print("The BFS has reached the goal, and the path is:")
-        #print(path.nodes)
-        input("[enter] to visualize the path")
-        space1.show(state_nodes, path, show_state_connections=True)
-        input("[enter] to continue...")
-
-        #space1.show(state_nodes,path, show_state_connections=True)
-
-    def sequence_tough():
-        print("--------Breadth-First Search---------")
-        space1 = ObstacleFreeContinuousSpace((-1000, 1000), (-1000, 1000))
-        state_nodes = from_grid_distribution_over_continuous_space(space1, 100, 100)
-        input("[enter] to visualize the states in the environment.")
-        print("This will take several seconds. Hit ^C if it's taking too long.")
-        try:
-            space1.show(state_nodes)
-        except KeyboardInterrupt:
-            print("Yeah that was taking too long...")
-            plt.close('all')
-        goal_state = state_nodes[-1]
-        input("BFS has to traverse all states. This is expensive. [enter] begin the search.")
-        bfs = BreadthFirstSearch(state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve()
-        path = Path.from_search_solution(bfs.reached)
-        #print("The BFS has reached the goal after all that time. The path is:")
-        #print(path.nodes)
-        input("[enter] to visualize the path.")
-        print("^C to skip")
-        try:
-            space1.show(state_nodes, path, show_state_connections=True)
-        except KeyboardInterrupt:
-            print("Yeah that was taking too long...")
-            plt.close('all')
-        input("[enter] to continue...")
-
-    def faster():
-        print("------- Best-First Search -------")
-        space3 = ObstacleFreeContinuousSpace((-1000, 1000), (-1000, 1000))
-        #space3.show()
-        state_nodes = from_grid_distribution_over_continuous_space(space3, 100, 100)
-        #space3.show(state_nodes)
-        goal_state = state_nodes[-1]
-        robot = Robot([(-1, 1), (-1, 1)])
-        input("With a heuristic, there will be fewer visits in the state space. [enter] begin the search.")
-        bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve(heuristic_function=manhattan_distance)
-        path = Path.from_search_solution(bfs.reached)
-        #print(path.nodes)
-        #print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
-        input("[enter] to visualize the path.")
-        print("^C to move past.")
-        try:
-            space3.show(state_nodes, path, show_state_connections=True)
-        except KeyboardInterrupt:
-            print("Yeah that was taking too long...")
-            plt.close('all')
-
     def sequence():
-        print("------- A star -------")
-        space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-        state_nodes = from_grid_distribution_over_continuous_space(space3, 10, 10)
-        space3.show(state_nodes)
-        goal_state = state_nodes[-1]
-        robot = Robot([(-1, 1), (-1, 1)])
-        space3.add(robot)
-        space3.add(Obstacle([(-10,100), (-10,10)]))
-        space3.add(Obstacle([(-60,-20), (-20,60)]))
-        space3.add(Obstacle([(30,40), (30,40)]))
-        input("Press [enter] to see the new environment.")
-        space3.show(state_nodes)
-        print("Clearly some of these state transitions will be \"costly\". Let's also assume that each transition has an inherent cost of 0.1.")
-        input("Let's again assume that the robot wants to plan a path from bottom-left to top-right. [enter] to start the search.")
-        bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve(heuristic_function=manhattan_distance)
+        print("---------- A* Search ----------")    
+        print("---- over artifial terrain ----")    
+        #columns, x_range, y_range = load_grid("terrain.blend")
+        space = ObstacleContinuousSpace(x_range, y_range)
+        space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.0)
+        state_nodes = from_grid_distribution_over_continuous_space(space, 20, 20)
+        goal_state = state_nodes[-2]
+        robot = Robot([(-5, 5), (-5, 5)])
+        space.add(robot)
+        bfs = A_Star_Search(robot, state_nodes, state_nodes[19], goal_state)
+        reached = bfs.solve()
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
-        print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
-        input("[enter] to visualize the path found by A*")
-        space3.show(state_nodes, path, show_state_connections=True)
-        input("[enter] to continue...")
-    
-    def all_or_nothing(robot_laden):
-        print("------- A star -------")
-        space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-        state_nodes = from_grid_distribution_over_continuous_space(space3, 10, 10)
-        goal_state = state_nodes[-1]
-        robot = Robot([(-1, 1), (-1, 1)]) if not robot_laden else Robot([(-10, 10), (-10, 10)])
-        space3.add(robot)
-        space3.add(Obstacle([(-10,10), (-80,-2)]))
-        space3.add(Obstacle([(-40,10), (10,100)]))
-        bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve(heuristic_function=manhattan_distance)
+        print(path.costs_by_nodes)
+        print(f"Total cost: {path.total_cost}")
+        input("[enter] to visualize the path")
+        space.show(state_nodes, path)
+
+    def boston():
+        print("----------------- A* Search -----------------")
+        print("-- from Boston Harbor to home (Back Bay) ----")  
+        #columns, x_range, y_range = load_grid("boston.blend")      
+        space = ObstacleContinuousSpace(x_range, y_range)
+        space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.0)
+        state_nodes = from_grid_distribution_over_continuous_space(space, 100, 100)
+        
+        goal_state = state_nodes[-5284] # could be an attribute of the mesh
+        goal_state.is_goal = True
+        
+        start_state = state_nodes[99]
+        start_state.is_start = True
+        #space.show(state_nodes)
+        robot = Robot([(-5, 5), (-5, 5)])
+        space.add(robot)
+        bfs = A_Star_Search(robot, state_nodes, start_state, goal_state)
+        reached = bfs.solve(heuristic_function=euclidean_manhattan_combo)
         path = Path.from_search_solution(bfs.reached)
-        print(path.nodes)
-        print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
-        space3.show(state_nodes, path, show_state_connections=True)
+        print(path.costs_by_nodes)
+        print(f"Total cost: {path.total_cost}")
+        input("[enter] to visualize the path")
+        space.show(state_nodes, path)
 
-    def test():
-        space = ObstacleContinuousSpace((-10,10), (-10,10))
-        state_nodes = from_grid_distribution_over_continuous_space(space, 2, 2)
-        space.show(state_nodes, show_state_connections=True)
 
-    def sequence3(robot_laden=False):
-        print("------- A star -------")
-        space3 = ObstacleContinuousSpace((-100, 100), (-100, 100))
-        state_nodes = from_grid_distribution_over_continuous_space(space3, 10, 10)
-        goal_state = state_nodes[-1]
-        robot = Robot([(-1, 1), (-1, 1)]) if not robot_laden else Robot([(-10, 10), (-10, 10)])
-        space3.add(robot)
-        space3.add(Obstacle([(-10,10), (-80,-2)]))
-        space3.add(Obstacle([(-10,10), (10,80)]))
-        input("Press [enter] to see the new environment.")
-        print("Notice the gap where our small robot could fit through without colliding with the obstacles.")
-        space3.show(state_nodes)
-        print("Clearly some of these state transitions will be \"costly\".")
-        input("Let's again assume that the robot wants to plan a path from bottom-left to top-right. [enter] to start the search.")
-        bfs = A_Star_Search(robot, state_nodes, state_nodes[0], goal_state)
-        reached = bfs.solve(heuristic_function=manhattan_distance)
-        path = Path.from_search_solution(bfs.reached)
-        #print(path.nodes)
-        print(f"Path length {len(path.nodes)}, with cost {path.total_cost}")
-        input("[enter] to visualize the path found by A*. The thickness of the green path shows the size of the robot.")
-        space3.show(state_nodes, path, show_state_connections=True)
-        input("[enter] to continue...")
-
-    def test():
-        space = ObstacleContinuousSpace((-10,10), (-10,10))
-        state_nodes = from_grid_distribution_over_continuous_space(space, 2, 2)
-        space.show(state_nodes, show_state_connections=True)
-
-    print("------- HW2 -------")
-    sleep(0.5)
-    print("This homework demonstrates path planning. We will consider a robot in a continuous environment. The robot plans by covering the continuous environment in a bunch of state configurations. Then it performs a search over these states. First, we will look at the simplest technique for doing this.")
-    input("Press [enter] to begin demonstration.")
-    sequence1()
-    print("BFS starts to fail when the environment gets big. Like, for instance, when there are 10,000 states (100 x 100) instead of 100.")
-    input("Press [enter] to begin demonstration.")
-    sequence_tough()
-    print("Luckily, we can use heuristics. to speed this up.")
-    input("If we use manhattan distance as a heuristic function, we can speed up the search significantly. [enter] to begin demonstration.")
-    faster()
-    print("But what if there are obstacles in the enviroment? This is where A* comes in. A* uses a heuristic but also takes into account cost.")
-    input("Let's now consider that the robot has shape - 2x2 (meters). Let's see how A* performs with some obstacles in the way. [enter] to begin demonstration")
-    sequence3(False)
-    print("Since the robot is only 2x2, it can just barely slip through that hole. But what if the robot was bigger - or, it was carrying something.")
-    input("Let's assume it's carrying something with 10x the side length. Press [enter] to see the demonstration of A* with a laden robot.")
-    sequence3(True)
-    print("The robot had to take a different path because it was laden with something that could not go through the narrow gap in the environment.")
-    sleep(0.5)
-    print("And that's all for HW2. Thank you!")
-    input("[enter] to quit.")
-    print("Bye.")
+    boston()
+    #sequence()
     
 
 if __name__ == '__main__':
