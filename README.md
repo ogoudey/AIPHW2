@@ -52,6 +52,10 @@ Now start the search and get the path:
 reached = search.solve(heuristic_function=manhattan_distance)
 path = Path.from_search_solution(search.reached)
 ```
+
+### Future Work
+Multi-Agent planning:
+Hierarchies based on - manueverability + size
 At any point, visualize the environment (all the arguments are optional):
 ```
 space.show(state_nodes, path, show_state_connections=True)
