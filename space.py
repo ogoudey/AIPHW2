@@ -80,7 +80,7 @@ class ObstacleContinuousSpace(Space):
         a_column = list(columns.values())[0]
         
         cell_size = (list(columns.keys())[1] - list(columns.keys())[0], list(columns.keys())[1] - list(columns.keys())[0]) # not too right...
-        cell_size = (10, 10)
+        cell_size = (1, 1)
         print(cell_size)
         for c in columns:
             making_obstacle = False
@@ -628,15 +628,22 @@ if USE_BPY:
 
 from time import sleep
 
-landmarks_to_state_idx = {"my favorite tree": 1500}
+class UnityEnvironment:
+    def __init__(self, boat, destinations, terrain):
+        self.boat = boat
+        self.destinations = destinations
+        self.terrain = terrain
 
 ### Exposed sequences ###
-def unity(terrain, goal: str):
+def rrt_astar(unity_environment: UnityEnvironment, goal: str):
+    terrain = unity_environment.terrain
+    destinations = unity_environment.destinations
+    print(destinations)
+    boat = unity_environment.boat
     # get columns, range_x, range_y
     x_range, y_range = (-50,50), (-50, 50) # overriding...
     def scale(side):
         return side * 100 / 1025 - 50
-    print(terrain.shape)
     columns = {
         float(scale(col)): {float(scale(row)): terrain[row, col] for row in range(terrain.shape[0])}
         for col in range(terrain.shape[1])
@@ -645,9 +652,13 @@ def unity(terrain, goal: str):
     #space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 1)
     space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.58)
     
-    goal_state = StateNode(space, (-42.0, 3.0), None, [])
+    goal_coordinates = (min(max(destinations[goal]["position"]["x"], x_range[0]), x_range[1]), min(max(destinations[goal]["position"]["z"], y_range[0]), y_range[1]))
+    goal_state = StateNode(space, goal_coordinates, None, [])
+    
     goal_state.is_goal = True
-    start_state = StateNode(space, (12.0, -50.0), None, [])
+    start_coordinates = (boat["position"]["x"], boat["position"]["z"])
+    print(f"Start coordinates: {start_coordinates}, end coordinates: {goal_coordinates}")
+    start_state = StateNode(space, start_coordinates, None, [])
     start_state.is_start = True
     robot = Robot([(-0.1, 0.1), (-0.1, 0.1)])
     space.add(robot)
@@ -661,7 +672,10 @@ def unity(terrain, goal: str):
     print(path.costs_by_nodes)
     print(f"Total cost: {path.total_cost}")
     input("[enter] to visualize the path")
-    space.show(state_nodes, path, True)
+    try:
+        space.show(state_nodes, path, True)
+    except Exception as e:
+        print(e)
     return path
 
 def main():
@@ -705,7 +719,7 @@ def main():
         print(path.costs_by_nodes)
         print(f"Total cost: {path.total_cost}")
         input("[enter] to visualize the path")
-        space.show(state_nodes, path)
+        
 
 
     boston()
