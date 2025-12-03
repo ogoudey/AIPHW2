@@ -330,7 +330,7 @@ class CostlySearchNode:
         return f"{self.state.coordinates}"
 
     def as_message(self):
-        print(f"Waypoint:{self.state.coordinates[0]} {self.state.coordinates[1]}")
+        #print(f"Waypoint:{self.state.coordinates[0]} {self.state.coordinates[1]}")
         return f"{self.state.coordinates[0]} {self.state.coordinates[1]}"
 
     def __init__(self, state_node: StateNode, parent:"CostlySearchNode", children: dict["CostlySearchNode", float]):
@@ -638,7 +638,6 @@ class UnityEnvironment:
 def rrt_astar(unity_environment: UnityEnvironment, goal: str):
     terrain = unity_environment.terrain
     destinations = unity_environment.destinations
-    print(destinations)
     boat = unity_environment.boat
     # get columns, range_x, range_y
     x_range, y_range = (-50,50), (-50, 50) # overriding...
@@ -663,17 +662,18 @@ def rrt_astar(unity_environment: UnityEnvironment, goal: str):
     robot = Robot([(-0.1, 0.1), (-0.1, 0.1)])
     space.add(robot)
     state_nodes = from_rrt(space, start_state, 1200, 5.0, 4.0, goal_state)
-    input("[enter] to visualize the state nodes")
-    space.show(state_nodes, show_state_connections=True)
+    #input("[enter] to visualize the state nodes")
+    #space.show(state_nodes, show_state_connections=True)
     
     bfs = A_Star_Search(robot, state_nodes, start_state, goal_state)
     reached = bfs.solve(heuristic_function=euclidean_manhattan_combo)
     path = Path.from_search_solution(bfs.reached)
     print(path.costs_by_nodes)
     print(f"Total cost: {path.total_cost}")
-    input("[enter] to visualize the path")
+    #input("[enter] to visualize the path")
     try:
-        space.show(state_nodes, path, True)
+        #space.show(state_nodes, path, True)
+        pass
     except Exception as e:
         print(e)
     return path
