@@ -1,23 +1,24 @@
 # AI Planning Homework 2 -- Path Planning
 
-## Setup
+## Integration with [VLA*](https://github.com/ogoudey/VLA_Star)
+This project is mainly used as a path planner for the VLA* project - as a tool for an LLM essentially.
+
+## bpy Setup
 Clone the repository:
 ```
 git clone https://github.com/ogoudey/AIPHW2.git
 ```
-To setup the python environment and start the submission, do:
+
+
+Then set up an anaconda environment (makes python version control easier):
 ```
-./run.sh
-```
-### Alternatively,
-```
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-python3 space.py
+conda create -c bpy python=3.11
+conda activate bpy
+pip install matplotlib bpy aabbtree
 ```
 
 ## Creating objects of your own
+
 Below I'll illustrate the sequence of things needed to run a path planner.
 
 To make a new continuous space  that comes from (-100,-100) to (100,100), pass the `x_range` and `y_range`:
@@ -60,3 +61,6 @@ At any point, visualize the environment (all the arguments are optional):
 ```
 space.show(state_nodes, path, show_state_connections=True)
 ```
+
+The Blender files contain meshes that are artificial and actual topographical data from Boston, respectively. Change the name of the file in `app_interfaces` to switch.
+
