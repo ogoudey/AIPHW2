@@ -80,7 +80,7 @@ class ObstacleContinuousSpace(Space):
         a_column = list(columns.values())[0]
         
         cell_size = (list(columns.keys())[1] - list(columns.keys())[0], list(columns.keys())[1] - list(columns.keys())[0]) # not too right...
-        cell_size = (400, 400)
+        cell_size = (10, 10)
         print(cell_size)
         for c in columns:
             making_obstacle = False
@@ -124,9 +124,9 @@ class ObstacleContinuousSpace(Space):
                 else:
                     ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
                 if node.is_start:
-                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 5, color='brown'))
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 2, color='brown'))
                 elif node.is_goal:
-                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 5, color='green'))
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 2, color='green'))
             if show_state_connections:
                 for n in state_nodes:
                     x1 = n.coordinates[0]
@@ -142,7 +142,7 @@ class ObstacleContinuousSpace(Space):
             ax.plot(xs, ys, color='green', linewidth=robot_side_len, label='path')
 
             for node in path.nodes[1:]:
-                ax.add_patch(plt.Circle((node.state.coordinates[0], node.state.coordinates[1]), 10, color='green'))
+                ax.add_patch(plt.Circle((node.state.coordinates[0], node.state.coordinates[1]), robot_side_len, color='green'))
         ax.set_aspect('equal', adjustable='box')
         ax.relim()
         ax.autoscale()
@@ -181,7 +181,7 @@ class ObstacleContinuousSpace(Space):
 
             
     
-
+import math
 import random
 class StateNode:
     
@@ -223,9 +223,83 @@ class StateNode:
                 
             return cost
 
+    def distance(self, other: "StateNode"):
+        d = math.sqrt(math.pow(self.coordinates[0] - other.coordinates[0], 2) + math.pow(self.coordinates[1] - other.coordinates[1], 2))
+        return d
     
+    def angle(self, other: "StateNode"):
+        # return angle to coordinates of other node
+        a = other.coordinates[0] - self.coordinates[0]
+        o = other.coordinates[1] - self.coordinates[1]
+        angle = math.degrees(math.atan2(o, a))
+        return (angle + 180) % 360 # opposite...
+
+    def get_nearest_among(self, nodes:List["StateNode"]):
+        nearest = None
+        for node in nodes:
+            if nearest:
+                if self.distance(node) < self.distance(nearest):
+                    nearest = node
+            else:
+                nearest = node
+        return nearest
     
+    def get_nearest_among_w_condition(self, nodes:List["StateNode"], condition: Any):
+        nearest = None
+        for node in nodes:
+            if nearest:
+                if self.distance(node) < self.distance(nearest):
+                    angle = self.angle(node)
+                    okay_angle = condition(angle)
+                    #print(f"{angle} is {okay_angle}")
+                    if okay_angle:
+                        nearest = node
+            else:
+                angle = self.angle(node)
+                okay_angle = condition(angle)
+                #print(f"{angle} is {okay_angle}")
+                if okay_angle:
+                    nearest = node
+        return nearest
+
+    def already_in(self, nodes:List["StateNode"]):
+        for node in nodes:
+            if self.distance(node) < 0.01:
+                #print(f"{self.coordinates} too close to {node.coordinates}")
+                return True
+        return False
+    
+    @classmethod    
+    def create_branch(cls, space, nodes, nearest_node, random_node, dT:float=2.0):
         
+        nearest_x, nearest_y = nearest_node.coordinates[0], nearest_node.coordinates[1]
+        random_x, random_y = random_node.coordinates[0], random_node.coordinates[1]
+        d = nearest_node.distance(random_node)
+        try:
+            coordinates = (
+                nearest_x + (random_x - nearest_x) / d * dT,
+                nearest_y + (random_y - nearest_y) / d * dT,
+            )
+        except ZeroDivisionError:
+            print(f"Division by zero for random node {random_node}")
+            return None
+        
+        new_node = cls(space, coordinates, nearest_node, [])
+        
+        #nearest_node.set_child(new_node) # directed
+        #return new_node
+        if nearest_node.has_collision(new_node) == 0.1: # If it equals the default cost for any edge...
+            if not new_node.already_in(nodes):
+                nearest_node.set_child(new_node) # directed
+                return new_node
+            else:
+                #print(f"Already in...")
+                del new_node
+                return None
+        else:
+            #print(f"Has collision...")
+            del new_node
+            return None
 
 import random
 import math
@@ -236,7 +310,9 @@ class SearchNode:
     
     def __repr__(self):
         return f"{self.state.coordinates}"
-      
+
+    
+
     def __init__(self, state_node: StateNode, parent: "SearchNode", children: List["SearchNode"]):
         self.state = state_node
         self.parent = parent
@@ -252,6 +328,10 @@ class CostlySearchNode:
 
     def __repr__(self):
         return f"{self.state.coordinates}"
+
+    def as_message(self):
+        print(f"Waypoint:{self.state.coordinates[0]} {self.state.coordinates[1]}")
+        return f"{self.state.coordinates[0]} {self.state.coordinates[1]}"
 
     def __init__(self, state_node: StateNode, parent:"CostlySearchNode", children: dict["CostlySearchNode", float]):
         self.state = state_node
@@ -283,9 +363,6 @@ def from_uniform_distribution_over_continuous_space(space: ObstacleFreeContinuou
         nodes.append(StateNode(space, (x_coordinate, y_coordinate), None, []))
     logger.warning("Not a usable state space - unconnected state graph.")
     return nodes # Not a usable 
-
-
-
 
 def from_grid_distribution_over_continuous_space(space: ObstacleContinuousSpace, n_rows: int, n_columns: int):
     # Now symmetric!
@@ -321,6 +398,39 @@ def from_grid_distribution_over_continuous_space(space: ObstacleContinuousSpace,
             raise IndexError
     return nodes
 
+def from_rrt(space: ObstacleContinuousSpace, start: StateNode, num_nodes, beta: float, dT: float=2.0, goal: StateNode | None = None):
+    if not goal:
+        raise Exception("Must provide a goal to use RRTs.")
+    nodes: List[StateNode] = [start]
+    for i in range(num_nodes):
+        random_node = StateNode(space, (random.uniform(*space.x_range), random.uniform(*space.y_range)), None, [])
+        
+        #if random_node.distance(goal) < beta:
+        #    random_node = goal
+        def good_condition(theta):
+            if theta > 0 and theta < 100:
+                return False
+            else:
+                return True
+        nearest_node = random_node.get_nearest_among_w_condition(nodes, good_condition)
+        if not nearest_node:
+            continue
+            raise Exception(f"Nearest node to {random_node.coordinates} (is {nearest_node})")
+
+        new_node_Q = StateNode.create_branch(space, nodes, nearest_node, random_node, dT)
+        if new_node_Q:
+            nodes.append(new_node_Q)
+            if new_node_Q.distance(goal) < beta:
+                new_node_Q.is_goal = True
+                new_node_Q.coordinates = goal.coordinates
+                print("Found goal, returning early...")
+                return nodes
+        #print(f"{random_node.coordinates} --- d to goal: {random_node.distance(goal)}, nearest_coords: {nearest_node.coordinates}, new_node: {new_node_Q}")
+        print(f"Nodes placed: {len(nodes)}", end="\r")
+    if not goal.already_in(nodes):
+        print("This RRT does not reach the goal...")
+        nodes.append(goal)
+    return nodes
 
 
 ### End "Space -> State" Utilities
@@ -511,11 +621,49 @@ bfs.solve()
 path = Path.from_search_solution(bfs.reached)
 logger.info(path)
 """
-
-from app_interfaces import columns, x_range, y_range
+USE_BPY = False
+if USE_BPY:
+    from app_interfaces import columns, x_range, y_range
 
 
 from time import sleep
+
+landmarks_to_state_idx = {"my favorite tree": 1500}
+
+### Exposed sequences ###
+def unity(terrain, goal: str):
+    # get columns, range_x, range_y
+    x_range, y_range = (-50,50), (-50, 50) # overriding...
+    def scale(side):
+        return side * 100 / 1025 - 50
+    print(terrain.shape)
+    columns = {
+        float(scale(col)): {float(scale(row)): terrain[row, col] for row in range(terrain.shape[0])}
+        for col in range(terrain.shape[1])
+    }
+    space = ObstacleContinuousSpace(x_range, y_range)
+    #space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 1)
+    space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.58)
+    
+    goal_state = StateNode(space, (-42.0, 3.0), None, [])
+    goal_state.is_goal = True
+    start_state = StateNode(space, (12.0, -50.0), None, [])
+    start_state.is_start = True
+    robot = Robot([(-0.1, 0.1), (-0.1, 0.1)])
+    space.add(robot)
+    state_nodes = from_rrt(space, start_state, 1200, 5.0, 4.0, goal_state)
+    input("[enter] to visualize the state nodes")
+    space.show(state_nodes, show_state_connections=True)
+    
+    bfs = A_Star_Search(robot, state_nodes, start_state, goal_state)
+    reached = bfs.solve(heuristic_function=euclidean_manhattan_combo)
+    path = Path.from_search_solution(bfs.reached)
+    print(path.costs_by_nodes)
+    print(f"Total cost: {path.total_cost}")
+    input("[enter] to visualize the path")
+    space.show(state_nodes, path, True)
+    return path
+
 def main():
     def sequence():
         print("---------- A* Search ----------")    
