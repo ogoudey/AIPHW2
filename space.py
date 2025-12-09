@@ -635,21 +635,28 @@ class UnityEnvironment:
         self.terrain = terrain
 
 ### Exposed sequences ###
-def rrt_astar(unity_environment: UnityEnvironment, goal: str):
+def rrt_astar(unity_environment: UnityEnvironment, goal: str, num_nodes:int=1200, terrain_aabb:tuple=((-50,50), (-50, 50)), costly_altitude:float=0.58):
+    print(f"Terrain is declared to be {terrain_aabb}")
     terrain = unity_environment.terrain
+    print(f"Terrain data shape: {terrain.shape}")
     destinations = unity_environment.destinations
     boat = unity_environment.boat
     # get columns, range_x, range_y
-    x_range, y_range = (-50,50), (-50, 50) # overriding...
+    x_range, y_range = terrain_aabb[0], terrain_aabb[1] # (-50,50), (-50, 50) # overriding...
+
+    side_offset = 0
+
     def scale(side):
-        return side * 100 / 1025 - 50
+        return side
+        return side * 100 / 1025 - side_offset
     columns = {
-        float(scale(col)): {float(scale(row)): terrain[row, col] for row in range(terrain.shape[0])}
+        float(scale(col)): {float(scale(row)): float(terrain[row, col]) for row in range(terrain.shape[0])}
         for col in range(terrain.shape[1])
     }
+    #print(columns)
     space = ObstacleContinuousSpace(x_range, y_range)
-    #space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 1)
-    space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.58)
+    space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > costly_altitude)
+    #space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.58)
     
     goal_coordinates = (min(max(destinations[goal]["position"]["x"], x_range[0]), x_range[1]), min(max(destinations[goal]["position"]["z"], y_range[0]), y_range[1]))
     goal_state = StateNode(space, goal_coordinates, None, [])
@@ -661,9 +668,10 @@ def rrt_astar(unity_environment: UnityEnvironment, goal: str):
     start_state.is_start = True
     robot = Robot([(-0.1, 0.1), (-0.1, 0.1)])
     space.add(robot)
-    state_nodes = from_rrt(space, start_state, 1200, 5.0, 4.0, goal_state)
+    space.show([start_state, goal_state])
+    state_nodes = from_rrt(space, start_state, num_nodes, beta=20.0, dT=20.0, goal=goal_state)
     #input("[enter] to visualize the state nodes")
-    #space.show(state_nodes, show_state_connections=True)
+    space.show(state_nodes, show_state_connections=True)
     
     bfs = A_Star_Search(robot, state_nodes, start_state, goal_state)
     reached = bfs.solve(heuristic_function=euclidean_manhattan_combo)
@@ -676,6 +684,7 @@ def rrt_astar(unity_environment: UnityEnvironment, goal: str):
         pass
     except Exception as e:
         print(e)
+    print(f"Path planning done.")
     return path
 
 def main():
