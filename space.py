@@ -9,6 +9,7 @@ class Space:
         pass
 
 class ObstacleFreeContinuousSpace(Space):
+    
     x_range: tuple[float, float]
     y_range: tuple[float, float]
     def __init__(self, x_range: tuple[float, float], y_range: tuple[float, float]):
@@ -22,7 +23,7 @@ class ObstacleFreeContinuousSpace(Space):
 
     def show(self, state_nodes: List["StateNode"]=[], path: "Path"=None, show_state_connections:bool=False):
         fig, ax = plt.subplots()
-        
+        robot_side_len = 2 # suppose
         if len(state_nodes) > 0:
             for node in state_nodes:
                 if node.visited:
@@ -34,13 +35,13 @@ class ObstacleFreeContinuousSpace(Space):
                     x1 = n.coordinates[0]
                     y1 = n.coordinates[1]
                     for child in n.children:
-                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link', alpha=0.02)
+                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=0.5, label='link', alpha=0.02)
         if path:
             # logger path nodes
             first_node = path.nodes[0]
             xs = [n.state.coordinates[0] for n in path.nodes]
             ys = [n.state.coordinates[1] for n in path.nodes]
-            robot_side_len = 2 # suppose
+            
             ax.plot(xs, ys, color='green', linewidth=robot_side_len, label='path')
 
             for node in path.nodes[1:]:
@@ -81,7 +82,7 @@ class ObstacleContinuousSpace(Space):
         a_column = list(columns.values())[0]
         
         cell_size = (list(columns.keys())[1] - list(columns.keys())[0], list(columns.keys())[1] - list(columns.keys())[0]) # not too right...
-        cell_size = (1, 1)
+        cell_size = (250, 250)
         log(cell_size)
         for c in columns:
             making_obstacle = False
@@ -121,9 +122,9 @@ class ObstacleContinuousSpace(Space):
         if len(state_nodes) > 0:
             for node in state_nodes:
                 if node.visited:
-                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.2, color='purple'))
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.02, color='purple'))
                 else:
-                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.1, color='black'))
+                    ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 0.01, color='black'))
                 if node.is_start:
                     ax.add_patch(plt.Circle((node.coordinates[0], node.coordinates[1]), 2, color='brown'))
                 elif node.is_goal:
@@ -133,7 +134,7 @@ class ObstacleContinuousSpace(Space):
                     x1 = n.coordinates[0]
                     y1 = n.coordinates[1]
                     for child in n.children:
-                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=2, label='link', alpha=0.1)
+                        ax.plot((x1, child.coordinates[0]), (y1, child.coordinates[1]), color='black', linewidth=0.1, label='link', alpha=0.1)
         if not path is None:
             # logger path nodes
             first_node = path.nodes[0]
@@ -151,7 +152,7 @@ class ObstacleContinuousSpace(Space):
             plt.show()
         else:
             file_name = "navigation"
-            plt.savefig(f"{file_name}.png")
+            plt.savefig(f"{file_name}.png", dpi=1000)
 
     @classmethod
     def from_image(cls, img, height, width):
@@ -403,6 +404,10 @@ def from_grid_distribution_over_continuous_space(space: ObstacleContinuousSpace,
     return nodes
 
 def from_rrt(space: ObstacleContinuousSpace, start: StateNode, num_nodes, beta: float, dT: float=2.0, goal: StateNode | None = None):
+    """
+    beta: close enough to goal constant
+    dT: len of branch
+    """
     if not goal:
         raise Exception("Must provide a goal to use RRTs.")
     nodes: List[StateNode] = [start]
@@ -412,7 +417,7 @@ def from_rrt(space: ObstacleContinuousSpace, start: StateNode, num_nodes, beta: 
         #if random_node.distance(goal) < beta:
         #    random_node = goal
         def good_condition(theta):
-            if theta > 0 and theta < 100:
+            if theta > 60 and theta < 120:
                 return False
             else:
                 return True
@@ -430,7 +435,7 @@ def from_rrt(space: ObstacleContinuousSpace, start: StateNode, num_nodes, beta: 
                 log("Found goal, returning early...")
                 return nodes
         #log(f"{random_node.coordinates} --- d to goal: {random_node.distance(goal)}, nearest_coords: {nearest_node.coordinates}, new_node: {new_node_Q}")
-        #log(f"Nodes placed: {len(nodes)}", end="\r")
+        print(f"Nodes placed: {len(nodes)}", end="\r")
     if not goal.already_in(nodes):
         log("This RRT does not reach the goal...")
         nodes.append(goal)
@@ -525,7 +530,7 @@ class BreadthFirstSearch(Search):
                 continue
             visited.append(node.state)
             
-            #log(f"Visits: {len(visited)} Size of frontier: {len(frontier)}", end="\r")
+            log(f"Visits: {len(visited)} Size of frontier: {len(frontier)}", end="\r")
             if node.state.coordinates == self.goal_node.coordinates:
                 log(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
                 self.reached = node
@@ -599,7 +604,7 @@ class A_Star_Search(Search):
             visited.append(node.state)
             node.state.visited = True
             
-            #log(f"Visits: {len(visited)} Size of frontier: {frontier.qsize()}", end="\r")
+            #print(f"Visits: {len(visited)} Size of frontier: {frontier.qsize()}", end="\r")
             
             if node.state.coordinates == self.goal_node.coordinates:
                 log(f"Goal reached after {len(visited)} visits in {time() - t0} seconds.")
@@ -635,35 +640,52 @@ if USE_BPY:
 from time import sleep
 
 class UnityEnvironment:
-    def __init__(self, boat, destinations, terrain):
+    
+    def __init__(self, boat, destinations, terrain, terrain_mode="numpy_array"):
         self.boat = boat
         self.destinations = destinations
-        self.terrain = terrain
+        if not type(terrain) == dict:
+            log(f"Terrain data shape: {terrain.shape}")
+            side_offset = 0
+            def scale(side):
+                return side
+                return side * 100 / 1025 - side_offset
+            columns = {
+                float(scale(col)): {float(scale(row)): float(terrain[row, col]) for row in range(terrain.shape[0])}
+                for col in range(terrain.shape[1])
+            }
+            self.terrain = columns
+        else:
+            floated_dict = {}
+            for column_str, rows in terrain.items():
+                column = float(column_str)
+                if not column in floated_dict:
+                    floated_dict[column] = {}
+                for row_str, height in rows.items():
+                    row = float(row_str)
+                    floated_dict[column][row] = height
+            self.terrain = floated_dict
 
-### Exposed sequences ###
-def rrt_astar(unity_environment: UnityEnvironment, goal: str, num_nodes:int=1200, terrain_aabb:tuple=((-50,50), (-50, 50)), costly_altitude:float=0.58, logger:Any=lambda t: log(t)):
+"""
+watch -n 0.2 feh navigation.png
+"""
+
+### Exposed sequence ###
+def rrt_astar(unity_environment: UnityEnvironment, goal: str, num_nodes:int=1200, terrain_aabb:tuple=((-50,50), (-50, 50)), costly_altitude:float=0.58, dT: float = 5.0, beta: float = 5.0, logger:Any=lambda t: log(t)):
     global log
     log = logger
     log(f"Terrain is declared to be {terrain_aabb}")
     terrain = unity_environment.terrain
-    log(f"Terrain data shape: {terrain.shape}")
+    
     destinations = unity_environment.destinations
     boat = unity_environment.boat
     # get columns, range_x, range_y
     x_range, y_range = terrain_aabb[0], terrain_aabb[1] # (-50,50), (-50, 50) # overriding...
 
-    side_offset = 0
-
-    def scale(side):
-        return side
-        return side * 100 / 1025 - side_offset
-    columns = {
-        float(scale(col)): {float(scale(row)): float(terrain[row, col]) for row in range(terrain.shape[0])}
-        for col in range(terrain.shape[1])
-    }
+    
     #log(columns)
     space = ObstacleContinuousSpace(x_range, y_range)
-    space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > costly_altitude)
+    space.get_obstacles_from_altitude(terrain, cost=100.0, condition=lambda altitude: altitude > costly_altitude)
     #space.get_obstacles_from_altitude(columns, cost=100.0, condition=lambda altitude: altitude > 0.58)
     
     goal_coordinates = (min(max(destinations[goal]["position"]["x"], x_range[0]), x_range[1]), min(max(destinations[goal]["position"]["z"], y_range[0]), y_range[1]))
@@ -677,7 +699,7 @@ def rrt_astar(unity_environment: UnityEnvironment, goal: str, num_nodes:int=1200
     robot = Robot([(-0.1, 0.1), (-0.1, 0.1)])
     space.add(robot)
     space.show([start_state, goal_state])
-    state_nodes = from_rrt(space, start_state, num_nodes, beta=20.0, dT=20.0, goal=goal_state)
+    state_nodes = from_rrt(space, start_state, num_nodes, beta, dT, goal=goal_state)
     #input("[enter] to visualize the state nodes")
     space.show(state_nodes, show_state_connections=True)
     
